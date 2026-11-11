@@ -1,0 +1,12 @@
+aws_account_id       = "946935221576"
+root_volume_size     = 8
+aws_region           = "ap-south-1"
+aws_profile          = "portfolio"
+instance_name        = "krishna-portfolio-terraform"
+instance_type        = "t3.micro"
+ami_id               = "ami-09d8c1e69d114dbf7"
+vpc_id               = "vpc-05fc005029e6a1729"
+subnet_id            = "subnet-031da0aa4efb50bb4"
+security_group_id    = "sg-0508a951017e33777"
+key_name             = "portfolio-ec2"
+ssh_private_key_path = "~/.ssh/id_ed25519_portfolio_ec2"
