@@ -1,0 +1,27 @@
+name: Portfolio CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build Docker image
+        run: docker build -t portfolio:${{ github.sha }} .
+
+      - name: Validate Nginx configuration
+        run: docker run --rm portfolio:${{ github.sha }} nginx -t
