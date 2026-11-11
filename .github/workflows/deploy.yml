@@ -12,7 +12,18 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    # Serialize releases so two pushes cannot replace the container together.
+    concurrency:
+      group: portfolio-${{ github.ref }}
+      cancel-in-progress: false
+
+    env:
+      IMAGE: portfolio:${{ github.sha }}
+      EC2_HOST: 13.233.245.178
+      EC2_USER: ubuntu
 
     steps:
       - name: Download repository code
@@ -21,7 +32,136 @@ jobs:
           persist-credentials: false
 
       - name: Build Docker image
-        run: docker build -t portfolio:${{ github.sha }} .
+        run: docker build -t "$IMAGE" .
 
       - name: Validate Nginx configuration
-        run: docker run --rm portfolio:${{ github.sha }} nginx -t
+        run: docker run --rm "$IMAGE" nginx -t
+
+      - name: Test the website inside Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name portfolio-test -p 127.0.0.1:8080:80 "$IMAGE"
+          trap 'docker logs portfolio-test; docker rm -f portfolio-test' EXIT
+          curl --fail --silent --show-error --retry 10 --retry-connrefused \
+            --retry-delay 1 http://127.0.0.1:8080/ -o /tmp/home.html
+          grep -q 'id="hero-title"' /tmp/home.html
+          for path in styles.css script.js assets/favicon.svg assets/krishna-sen-resume.pdf; do
+            curl --fail --silent --show-error "http://127.0.0.1:8080/$path" -o /dev/null
+          done
+
+      # Pull requests build and test only. Deployment uses trusted main commits.
+      - name: Configure SSH and check server access
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EC2_SSH_KEY" || { echo 'EC2_SSH_KEY secret is missing.'; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/portfolio_key"
+          chmod 600 "$HOME/.ssh/portfolio_key"
+          # Pinned host key previously verified against the EC2 boot console.
+          printf '%s\n' '13.233.245.178 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPpjGfsVqxAEFzOHcjjVkdWSHakiC6FtxTNG/gvRkMqx' > "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<EOF
+          Host portfolio-ec2
+            HostName $EC2_HOST
+            User $EC2_USER
+            IdentityFile ~/.ssh/portfolio_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+          chmod 600 "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"
+          RUNNER_IP=$(curl --fail --silent --show-error https://checkip.amazonaws.com)
+          echo "Runner public IP: $RUNNER_IP"
+          echo 'The EC2 security group must permit this runner to connect on TCP port 22.'
+          ssh portfolio-ec2 'sudo -n docker info > /dev/null && mkdir -p ~/portfolio/releases'
+
+      - name: Transfer the tested image to EC2
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker save "$IMAGE" | gzip > "$RUNNER_TEMP/portfolio.tar.gz"
+          scp "$RUNNER_TEMP/portfolio.tar.gz" "portfolio-ec2:/home/ubuntu/portfolio/releases/${GITHUB_SHA}.tar.gz"
+
+      - name: Deploy image and roll back on failure
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh portfolio-ec2 "bash -s -- '$GITHUB_SHA'" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          exec 9>/home/ubuntu/portfolio/.deploy.lock
+          flock -w 120 9
+          IMAGE="portfolio:$SHA"
+          ARCHIVE="/home/ubuntu/portfolio/releases/$SHA.tar.gz"
+          CANDIDATE="portfolio-check-$SHA"
+          PREVIOUS_SAVED=0
+          NEW_STARTED=0
+
+          cleanup() {
+            code=$?
+            trap - EXIT
+            sudo -n docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+            if [ "$code" -ne 0 ]; then
+              echo 'Deployment failed; restoring the previous container if available.'
+              if [ "$NEW_STARTED" -eq 1 ]; then
+                sudo -n docker logs --tail 50 portfolio || true
+                sudo -n docker rm -f portfolio || true
+              fi
+              if [ "$PREVIOUS_SAVED" -eq 1 ]; then
+                sudo -n docker rename portfolio-previous portfolio
+                sudo -n docker start portfolio
+              fi
+            fi
+            exit "$code"
+          }
+          trap cleanup EXIT
+
+          gzip -dc "$ARCHIVE" | sudo -n docker load
+          sudo -n docker run --rm "$IMAGE" nginx -t
+          sudo -n docker run -d --name "$CANDIDATE" "$IMAGE"
+          healthy=0
+          for attempt in $(seq 1 15); do
+            if sudo -n docker exec "$CANDIDATE" wget -qO- http://127.0.0.1/ | grep -q 'id="hero-title"'; then
+              healthy=1
+              break
+            fi
+            sleep 1
+          done
+          [ "$healthy" -eq 1 ]
+          sudo -n docker rm -f "$CANDIDATE"
+
+          if sudo -n docker container inspect portfolio >/dev/null 2>&1; then
+            # Retain one stopped previous release for manual rollback.
+            sudo -n docker rm -f portfolio-previous >/dev/null 2>&1 || true
+            sudo -n docker rename portfolio portfolio-previous
+            PREVIOUS_SAVED=1
+            sudo -n docker stop portfolio-previous
+          fi
+          NEW_STARTED=1
+          sudo -n docker run -d --name portfolio --restart unless-stopped \
+            --label "deployment.commit=$SHA" -p 80:80 "$IMAGE"
+          curl --fail --silent --show-error --retry 10 --retry-connrefused \
+            --retry-delay 1 http://127.0.0.1/ -o /tmp/portfolio-deployed.html
+          grep -q 'id="hero-title"' /tmp/portfolio-deployed.html
+          sudo -n docker ps --filter name=portfolio
+          rm -f "$ARCHIVE"
+          echo "Deployed commit $SHA successfully."
+          REMOTE
+
+      - name: Verify public website
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: curl --fail --silent --show-error --retry 3 --max-time 20 "http://$EC2_HOST/" -o /dev/null
+
+      - name: Remove temporary SSH credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/portfolio_key"
