@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           docker run -d --name portfolio-test -p 127.0.0.1:8080:80 "$IMAGE"
           trap 'docker logs portfolio-test; docker rm -f portfolio-test' EXIT
-          curl --fail --silent --show-error --retry 10 --retry-connrefused \
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --connect-timeout 3 --max-time 5 \
             --retry-delay 1 http://127.0.0.1:8080/ -o /tmp/home.html
           grep -q 'id="hero-title"' /tmp/home.html
           for path in styles.css script.js assets/favicon.svg assets/krishna-sen-resume.pdf; do
@@ -150,7 +150,7 @@ jobs:
           NEW_STARTED=1
           sudo -n docker run -d --name portfolio --restart unless-stopped \
             --label "deployment.commit=$SHA" -p 80:80 "$IMAGE"
-          curl --fail --silent --show-error --retry 10 --retry-connrefused \
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --connect-timeout 3 --max-time 5 \
             --retry-delay 1 http://127.0.0.1/ -o /tmp/portfolio-deployed.html
           grep -q 'id="hero-title"' /tmp/portfolio-deployed.html
           sudo -n docker ps --filter name=portfolio
