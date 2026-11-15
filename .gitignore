@@ -1,3 +1,11 @@
 .local/
 *.pem
 .DS_Store
+
+# Terraform local providers, state, and saved plans
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
