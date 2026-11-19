@@ -57,13 +57,14 @@ resource "aws_route_table_association" "public_b" {
   route_table_id = aws_route_table.public.id
 }
 
+# Retained for the EC2 security group's source rule.
 resource "aws_security_group" "alb" {
   name   = "website-alb-sg"
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
+    from_port   = 8080
+    to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -91,7 +92,7 @@ resource "aws_security_group" "website" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["49.43.40.236/32"]
+    cidr_blocks = ["49.43.41.130/32"]
   }
 
   egress {
@@ -129,7 +130,8 @@ resource "aws_instance" "website" {
     volume_size           = 8
     volume_type           = "gp3"
     encrypted             = true
-    delete_on_termination = true
+    # Keep Docker images, containers, and website files when EC2 is terminated.
+    delete_on_termination = false
   }
 
   credit_specification {
@@ -158,55 +160,11 @@ resource "aws_instance" "website" {
   }
 }
 
-resource "aws_lb" "website" {
-  name               = "website-alb"
-  internal           = false
-  load_balancer_type = "application"
+resource "aws_ec2_instance_state" "website" {
+  for_each = var.instances
 
-  security_groups = [aws_security_group.alb.id]
-
-  subnets = [
-    aws_subnet.public_a.id,
-    aws_subnet.public_b.id
-  ]
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-resource "aws_lb_target_group" "website" {
-  name        = "website-targets"
-  port        = 80
-  protocol    = "HTTP"
-  target_type = "instance"
-  vpc_id      = aws_vpc.main.id
-
-  health_check {
-    path    = "/"
-    matcher = "200"
-  }
-}
-
-resource "aws_lb_target_group_attachment" "website" {
-  for_each = aws_instance.website
-
-  target_group_arn = aws_lb_target_group.website.arn
-  target_id        = each.value.id
-  port             = 80
-}
-
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.website.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.website.arn
-  }
-}
-
-output "website_url" {
-  value = "http://${aws_lb.website.dns_name}"
+  instance_id = aws_instance.website[each.key].id
+  state       = "stopped"
 }
 
 output "instance_public_ips" {

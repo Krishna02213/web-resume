@@ -218,7 +218,7 @@ curl -I http://localhost
 
 `cloud-init` waits for startup setup. `build` packages the website. `run` starts Nginx in a container. We received `200 OK` on each server. `localhost` here means that EC2 server, not the Mac.
 
-Terraform created the infrastructure; these SSH commands deployed the application. Our existing GitHub Actions workflow still targets the earlier single server; we did not convert it to deploy to this pair.
+Terraform created the infrastructure; these SSH commands deployed the application. GitHub Actions now builds and tests the Docker website only. Deployment to the retired single server was removed; the workflow does not deploy to the Auto Scaling group.
 
 ### 5. Fix the SSH timeout we encountered
 
