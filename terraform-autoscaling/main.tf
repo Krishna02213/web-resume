@@ -116,12 +116,11 @@ resource "aws_key_pair" "website" {
 }
 
 resource "aws_instance" "seed" {
-  ami                         = data.aws_ssm_parameter.ubuntu_ami.value
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.public["a"].id
-  associate_public_ip_address = true
-  vpc_security_group_ids      = [aws_security_group.website.id]
-  key_name                    = aws_key_pair.website.key_name
+  ami                    = data.aws_ssm_parameter.ubuntu_ami.value
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public["a"].id
+  vpc_security_group_ids = [aws_security_group.website.id]
+  key_name               = aws_key_pair.website.key_name
 
   root_block_device {
     volume_size = 8
@@ -151,10 +150,6 @@ resource "aws_instance" "seed" {
   tags = {
     Name = "autoscaling-seed-server"
   }
-}
-
-output "seed_public_ip" {
-  value = aws_instance.seed.public_ip
 }
 
 resource "terraform_data" "deploy_website" {
@@ -276,37 +271,15 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_autoscaling_group" "website" {
   name             = "autoscaling-website-asg"
-  min_size         = 1
-  desired_capacity = 1
-  max_size         = 3
+  min_size         = var.min_servers
+  desired_capacity = var.min_servers
+  max_size         = var.max_servers
 
-  # Preserve the group metrics already enabled in the console.
   enabled_metrics = [
-    "GroupMinSize",
-    "WarmPoolDesiredCapacity",
-    "GroupTerminatingRetainedInstances",
-    "GroupAndWarmPoolTotalCapacity",
-    "WarmPoolWarmedCapacity",
-    "GroupMaxSize",
-    "GroupAndWarmPoolDesiredCapacity",
-    "GroupTotalInstances",
-    "GroupTerminatingRetainedCapacity",
-    "WarmPoolPendingCapacity",
-    "GroupTerminatingCapacity",
-    "WarmPoolMinSize",
-    "GroupStandbyInstances",
-    "WarmPoolTerminatingCapacity",
-    "GroupInServiceCapacity",
-    "WarmPoolTotalCapacity",
-    "WarmPoolTerminatingRetainedCapacity",
-    "GroupPendingCapacity",
-    "GroupStandbyCapacity",
-    "GroupTotalCapacity",
-    "GroupPendingInstances",
-    "GroupTerminatingInstances",
-    "GroupInServiceInstances",
     "GroupDesiredCapacity",
-    "WarmPoolPendingRetainedCapacity"
+    "GroupInServiceInstances",
+    "GroupPendingInstances",
+    "GroupTerminatingInstances"
   ]
 
   vpc_zone_identifier = [
@@ -337,13 +310,13 @@ resource "aws_autoscaling_group" "website" {
 }
 
 resource "aws_autoscaling_policy" "requests" {
-  enabled                = false # Test CPU scaling separately from request scaling.
+  enabled                = true
   name                   = "scale-by-website-requests"
   autoscaling_group_name = aws_autoscaling_group.website.name
   policy_type            = "TargetTrackingScaling"
 
   target_tracking_configuration {
-    target_value = 100
+    target_value = var.requests_per_server
 
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
@@ -353,12 +326,12 @@ resource "aws_autoscaling_policy" "requests" {
 }
 
 resource "aws_autoscaling_policy" "cpu" {
-  name                   = "scale-by-cpu-20-percent"
+  name                   = "scale-by-cpu-${var.cpu_target_percent}-percent"
   autoscaling_group_name = aws_autoscaling_group.website.name
   policy_type            = "TargetTrackingScaling"
 
   target_tracking_configuration {
-    target_value = 20
+    target_value = var.cpu_target_percent
 
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
@@ -368,4 +341,16 @@ resource "aws_autoscaling_policy" "cpu" {
 
 output "website_url" {
   value = "http://${aws_lb.website.dns_name}"
+}
+
+# Keep the image-building server stopped after its AMI is available.
+resource "aws_ec2_instance_state" "seed" {
+  instance_id = aws_instance.seed.id
+  state       = "stopped"
+
+  depends_on = [aws_ami_from_instance.website]
+}
+
+output "autoscaling_group_name" {
+  value = aws_autoscaling_group.website.name
 }
