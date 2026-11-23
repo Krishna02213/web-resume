@@ -1,90 +1,136 @@
-# Local Kubernetes practice
+# Local Kubernetes database practice
 
-This lab uses **kind** to run Kubernetes inside Docker Desktop on your Mac.
-It creates one node and deploys two Nginx pods. It does not use AWS.
+One kind node runs a small Flask website and a PostgreSQL database. This lab uses Docker Desktop on your Mac and does not use AWS.
 
-Open the website: **http://localhost:8080**
+**Browser → website Service → Flask pod → postgres Service → PostgreSQL → persistent volume**
 
-## What the files do
+You can add messages, see them after refreshing the page, and delete them.
 
-- `cluster.yaml`: creates the node and maps Mac port 8080 to node port 30080.
-- `app.yaml`: creates the `learning` namespace, a Deployment, and a Service.
+## Files and concepts
 
-## Basic concepts
+- `cluster.yaml`: defines the local Kubernetes node.
+- `manifests/namespace.yaml`: creates the `krishna` namespace.
+- `manifests/database-configmap.yaml`: stores the shared database connection settings.
+- `manifests/database-secret.yaml`: stores the password and session key locally; excluded from Git.
+- `manifests/database-secret.yaml.example`: safe template for a fresh checkout.
+- `manifests/postgres-pvc.yaml`: requests persistent storage for PostgreSQL.
+- `manifests/postgres-deployment.yaml`: runs one PostgreSQL pod.
+- `manifests/postgres-service.yaml`: gives PostgreSQL an internal address.
+- `manifests/website-deployment.yaml`: runs the Flask website pod.
+- `manifests/website-service.yaml`: gives the website an internal address.
+- `web/app.py`: the page and Python backend, which runs SQL queries.
+- `web/Dockerfile`: packages the app with Python and its dependencies.
+- `web/requirements.txt`: Python packages installed inside the image.
+- `deploy.sh`: builds the image, loads it into kind, applies the Secret YAML, and deploys the app.
 
-- **Cluster:** the Kubernetes environment.
-- **Node:** a machine that runs pods; here it is a Docker container.
-- **Pod:** runs application containers; each website pod runs Nginx.
-- **Deployment:** keeps two pods running and replaces failed/deleted pods.
-- **Service:** gives pods one stable address and routes requests to ready pods.
-- **Namespace:** groups resources for this practice lab.
+A **ConfigMap** holds DB_HOST, DB_PORT, DB_NAME, and DB_USER. A **Secret** holds the generated database password and app session key. The real Secret YAML is excluded from Git; only the example template is committed. A Secret is not automatically encrypted at rest in this basic kind lab.
 
-Flow: **Browser → localhost:8080 → node:30080 → Service → Nginx pod:80**
+A **Deployment** maintains pods. A **Service** gives pods a stable internal address. A **PersistentVolumeClaim (PVC)** requests storage that survives pod deletion.
 
-The two pods run the same Nginx welcome page. Two pods do not mean two nodes.
+This is a local learning app without sign-in. Its database is internal to the cluster.
 
-## Create and deploy
+## Deploy
 
-Keep Docker Desktop running. Run these on your **Mac terminal**:
+Keep Docker Desktop running. Run on your Mac:
 
 ```bash
 cd /Users/Ayush/Desktop/WEB_RESUME/Kubernets
-~/.local/bin/kind create cluster --name learning --config cluster.yaml --wait 180s
-kubectl --context kind-learning apply -f app.yaml
-kubectl --context kind-learning -n learning rollout status deployment/website
+# Only create the cluster if it does not already exist.
+~/.local/bin/kind create cluster --name learning --config cluster.yaml
+./deploy.sh
 ```
 
-Only run `kind create cluster` when the cluster does not already exist.
-The kind binary is installed at `~/.local/bin/kind`.
-
-## Inspect
+To reapply the YAML files after editing them (with your local Secret YAML present):
 
 ```bash
-# Show the node and whether it is Ready.
+kubectl --context kind-learning apply -f manifests/
+```
+
+For a fresh checkout, copy `manifests/database-secret.yaml.example` to `manifests/database-secret.yaml` and replace both placeholder values before running `deploy.sh`. Keep the database password unchanged while reusing an initialized database volume: editing a Secret does not change the password already stored in PostgreSQL. `cluster.yaml` stays outside `manifests/` because it is a kind configuration, not an application resource.
+
+## Open the website
+
+```bash
+kubectl --context kind-learning -n krishna port-forward service/website 8081:80
+```
+
+Keep that terminal running and open **http://localhost:8081**. This uses port 8081 so an old Nginx port-forward on 8080 does not conflict. If the selected website pod is replaced, restart port-forward.
+
+## Inspect the lab
+
+```bash
 kubectl --context kind-learning get nodes
-
-# Show the Deployment, pods, and Service.
-kubectl --context kind-learning -n learning get deployments,pods,services
-
-# Show application logs from both pods.
-kubectl --context kind-learning -n learning logs -l app=website --prefix --tail=20
-
-# Open a shell in one website pod. Type exit to leave.
-kubectl --context kind-learning -n learning exec -it deployment/website -- sh
+kubectl --context kind-learning -n krishna get pods,services,configmaps,pvc
+kubectl --context kind-learning -n krishna logs deployment/website
+kubectl --context kind-learning -n krishna logs deployment/postgres
 ```
 
-Inside the pod, run `ls /usr/share/nginx/html` to see the website files.
-Use `kubectl` for application pods; `docker ps` shows the kind node container.
+## Query the database
 
-## Practise scaling
+Open PostgreSQL's SQL terminal inside its pod:
 
 ```bash
-kubectl --context kind-learning -n learning scale deployment website --replicas=3
-kubectl --context kind-learning -n learning get pods
-
-# Return to the two replicas declared in app.yaml.
-kubectl --context kind-learning apply -f app.yaml
+kubectl --context kind-learning -n krishna exec -it deployment/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
-## Practise automatic pod replacement
+Inside `psql`, try:
 
-Copy one pod name from `get pods`, then replace POD_NAME below:
+```sql
+-- List tables.
+\dt
 
-```bash
-kubectl --context kind-learning -n learning delete pod POD_NAME
-kubectl --context kind-learning -n learning get pods
+-- Read all saved messages.
+SELECT * FROM messages ORDER BY id;
+
+-- Count messages.
+SELECT COUNT(*) FROM messages;
+
+-- Add a row; refresh the website to see it.
+INSERT INTO messages (name, message) VALUES ('Krishna', 'My first SQL insert');
+
+-- Update that practice row.
+UPDATE messages SET message = 'Updated using SQL' WHERE name = 'Krishna' AND message = 'My first SQL insert';
+
+-- Delete that practice row.
+DELETE FROM messages WHERE name = 'Krishna' AND message = 'Updated using SQL';
+
+-- Leave the SQL terminal.
+\q
 ```
 
-The Deployment creates a replacement to keep two pods running.
+## Test data persistence
 
-## Remove the lab
+Save a message on the website, then delete the database pod:
 
 ```bash
-# Remove the application only, keeping the cluster.
-kubectl --context kind-learning delete -f app.yaml
+kubectl --context kind-learning -n krishna delete pod -l app=postgres
+kubectl --context kind-learning -n krishna rollout status deployment/postgres --timeout=180s
+```
 
-# Remove the entire local cluster.
+Refresh the page after the database is ready. The PVC retains the messages. A brief connection error during database restart is expected: this lab has only one database pod.
+
+The local volume does **not** survive deleting the kind cluster. It is not a backup.
+
+## Scale the website
+
+```bash
+kubectl --context kind-learning -n krishna scale deployment website --replicas=2
+kubectl --context kind-learning -n krishna get pods -o wide
+```
+
+Both website pods use the same database. Keep the PostgreSQL Deployment at one replica for this lab. Applying the manifests returns the website to its declared one replica.
+
+## Cleanup
+
+```bash
+# WARNING: deletes this namespace, including the database PVC and messages.
+kubectl --context kind-learning delete namespace krishna
+
+# Or remove the entire cluster and all its local data.
 ~/.local/bin/kind delete cluster --name learning
 ```
 
-Reference: https://kind.sigs.k8s.io/docs/user/quick-start/
+References:
+- https://kind.sigs.k8s.io/docs/user/quick-start/
+- https://kubernetes.io/docs/tasks/configure-pod-container/configure-persistent-volume-storage/
+- https://www.psycopg.org/psycopg3/docs/basic/params.html

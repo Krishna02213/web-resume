@@ -1,5 +1,6 @@
 .local/
 *.pem
+Kubernets/manifests/database-secret.yaml
 .DS_Store
 
 # Terraform local providers, state, and saved plans

@@ -1,0 +1,136 @@
+KUBERNETES, DATABASE AND MONITORING — PROMPT HISTORY
+
+User requests from the available conversation, in chronological order.
+Spelling is lightly cleaned up for revision. Routine "done" replies,
+screenshots and pasted command output are omitted. This is a readable
+prompt record, not a verbatim conversation export.
+
+CLUSTER SETUP AND BASIC PRACTICE
+
+1. Deploy a simple Kubernetes cluster locally in
+   /Users/Ayush/Desktop/WEB_RESUME/Kubernets so I can understand the concepts.
+   Docker Desktop is running. (Requested twice.)
+2. What commands have you executed locally?
+3. Give me a step-by-step process to delete everything you just created.
+   I will execute the commands myself.
+4. Leave it and continue creating and deploying from here.
+5. Have you used Docker Desktop?
+6. How can I check the cluster components, including the control plane
+   and data plane?
+7. What should I do to create two nodes here?
+8. I need two servers in each control plane and data plane.
+9. How can I check whether my cluster is ready to deploy?
+10. I created a new namespace. Now I want to deploy YAML into it.
+11. Use the namespace name krishna.
+12. How can I check that the application is working, access it, and see
+    which worker node it is deployed on?
+13. Now I want to check the logs.
+14. Now I want to delete one worker without deleting the cluster.
+15. I deleted learning-worker2, but its pod still shows Running. Why?
+16. List all the Kubernetes commands we used, with a one-line explanation
+    of each command.
+17. Delete the cluster, pods and everything we built so we can practise
+    again from scratch.
+18. How can I verify that nothing is running?
+19. Let's start practising again by creating the cluster and everything.
+20. I want to learn the concepts properly. Keep everything basic and simple.
+21. Does creating a namespace create a worker node?
+22. Explain the Nginx startup logs briefly.
+23. What should we practise next?
+24. What is the default Nginx index.html that I see inside the container?
+25. Docker Desktop is running. Help me see the clusters running there.
+26. I cannot see a running cluster in Docker Desktop's Kubernetes section.
+27. Does my cluster have only a control plane and no data plane?
+28. Let's do the next practice.
+29. First, let's practise deleting a pod and seeing whether it is replaced.
+30. Continue to the next step after the replacement pod is running.
+31. What does exposing the deployment as a ClusterIP Service mean?
+32. Tell me the steps to push all changes to GitHub.
+33. Briefly explain what we did in Kubernetes, with small commands.
+34. If Kubernetes automatically replaces deleted pods, why do we need
+    the Service we just created?
+35. What is running in my cluster right now?
+
+DATABASE, CONFIGMAPS AND SECRETS
+
+36. Give me dummy database environment variables in app.yaml using a ConfigMap.
+37. Update the website to use a database so I can practise database work.
+38. Separate all the Kubernetes YAML files for clarity.
+39. Where is the Secret?
+40. Create a separate, simple and basic Secret YAML file.
+41. Show me the Deployment.
+42. I saved something through the browser. Now I want to check it in the DB.
+
+FIRST MONITORING PRACTICE
+
+43. Create a simple Grafana/Prometheus deployment to monitor the application
+    and share the steps so I can set up monitoring.
+44. Also add Loki for logging.
+45. Give me the Grafana dashboard login page link.
+46. Localhost is not opening.
+47. I want to access it directly.
+48. I want access on my Mac without port-forward.
+49. I cannot see the monitoring data. Fix it.
+50. Delete everything related to Grafana and Loki monitoring for now.
+    We will start again manually.
+
+RESTARTING THE INSTRUCTOR'S LAB
+
+51. My instructor has assigned these tasks:
+    First, create ConfigMaps and Secrets and deploy a database alongside
+    the existing application. Connect the application to the database
+    using the ConfigMaps and Secrets.
+    Second, set up Grafana, Prometheus and Loki locally for centralized
+    logging and monitoring. We will do alerting later.
+    Third, send logging and monitoring data to our Grafana Cloud account.
+    Tell me the procedure one step at a time. I will execute it.
+    Briefly explain what each step does. Start with the first step.
+52. There is no monitoring file. What are the files under manifests,
+    deployers.sh and cluster.yml doing?
+53. Keep a basic version. Remove unnecessary files if they are not needed.
+54. Let's do the next step.
+55. I want to see everything directly in my Grafana account. Is this local
+    step necessary?
+
+GRAFANA CLOUD METRICS
+
+56. At https://grafana.com/orgs/regalrug2358 there is already a stack.
+    Can you delete it and create another? If deletion is not possible,
+    tell me how to remove the previous configuration and add this one.
+57. Reuse the existing stack instead of deleting it.
+58. This is the metrics setup page:
+    https://grafana.com/orgs/regalrug2358/hosted-metrics/3789982#sending-metrics
+59. Put the configuration values in yourself and then tell me.
+60. Where should I run the query?
+61. My local Prometheus now reaches Grafana. What else should we learn
+    about monitoring?
+62. Of the instructor's three tasks, what have we completed so far?
+63. Tell me the next steps, with a brief explanation.
+
+LOCAL GRAFANA AND LOKI
+
+64. What should I do in the terminal?
+65. Is Loki set up locally first?
+66. Can I see Loki in the local Grafana where I am seeing Prometheus?
+67. Where can I see Loki?
+68. I cannot see Loki in the data source list.
+69. Is this Loki data source configuration correct?
+70. Tell me what to do on the Loki Explore page.
+71. Yes, I can see the logs now.
+
+GRAFANA CLOUD LOGGING
+
+72. Where should I go in Grafana Cloud?
+73. The logs URL is https://logs-prod-028.grafana.net.
+    Where can I find the API token?
+74. Continue.
+75. I executed the commands, but I think the grafana-cloud-logs Secret
+    was not created. I cannot see it.
+76. Do this configuration work yourself and tell me.
+77. Continue quickly.
+78. Give me a Prometheus query.
+79. Create prom.txt in the Kubernetes folder containing the prompts we
+    used for all this work so far.
+80. Continue creating the prompt file.
+
+END OF AVAILABLE KUBERNETES AND MONITORING PROMPT RECORD

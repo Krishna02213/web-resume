@@ -1,0 +1,12 @@
+# PostgreSQL is accessible inside the cluster, with no host port exposed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: krishna
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
