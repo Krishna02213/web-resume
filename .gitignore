@@ -10,3 +10,7 @@ Kubernets/manifests/database-secret.yaml
 *.tfplan
 crash.log
 crash.*.log
+
+# Hosted diagram checkout and deployment package; the standalone HTML is in Kubernets/.
+/artifacts/kubernetes-monitoring-map/
+/artifacts/kubernetes-monitoring-map.zip

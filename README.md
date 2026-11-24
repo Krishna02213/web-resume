@@ -3,6 +3,9 @@
 | Folder | Purpose |
 | --- | --- |
 | `docker/` | Website source, Dockerfile, Nginx configuration, Compose, and Docker study notes. |
+| [`Kubernets/README.md`](Kubernets/README.md) | Kubernetes manifests, database practice, monitoring architecture, queries, probes, storage, and command explanations. |
+| [`Kubernets/prompt.txt`](Kubernets/prompt.txt) | Earlier and recent Kubernetes/monitoring learning prompts, plus reusable revision prompts. |
+| [`Kubernets/monitoring-diagram.html`](Kubernets/monitoring-diagram.html) | Downloadable, offline architecture explorer containing the 13 monitoring YAML files. |
 | `terraform/README.md` | Terraform study notes, including S3 and load balancing exercises. |
 | `terraform-autoscaling/` | Current lab: seed EC2, Docker deployment, AMI, launch template, ALB, Auto Scaling group, and request/CPU scaling policies. |
 | `terraform-loadbalancer/` | Earlier two-subnet lab code; all its AWS resources were destroyed. |
