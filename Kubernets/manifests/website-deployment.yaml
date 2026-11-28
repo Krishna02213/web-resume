@@ -13,10 +13,18 @@ spec:
       labels:
         app: website
     spec:
+      securityContext:
+        fsGroup: 10001
       containers:
         - name: website
           image: krishna-database-web:v1
           imagePullPolicy: Never
+          env:
+            - name: STORAGE_DIR
+              value: /data
+          volumeMounts:
+            - name: website-files
+              mountPath: /data
           envFrom:
             - configMapRef:
                 name: database-config
@@ -41,3 +49,7 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+      volumes:
+        - name: website-files
+          persistentVolumeClaim:
+            claimName: website-files

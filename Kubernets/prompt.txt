@@ -1,4 +1,4 @@
-KUBERNETES, MANIFESTS AND MONITORING — COMPLETE LEARNING PROMPTS
+KUBERNETES, MANIFESTS, MONITORING AND STORAGE — COMPLETE LEARNING PROMPTS
 
 User requests from the available conversation, in chronological order.
 Spelling is lightly cleaned up for revision. Routine "done" replies,
@@ -162,6 +162,61 @@ MANIFEST CONCEPTS
     record the learning prompts in prompt.txt, push the changes to GitHub,
     and provide the repository link.
 
+EBS, EFS AND LOCAL PERSISTENT STORAGE — NOVEMBER 28, 2026
+
+94. What are EBS and EFS, and how do they mount differently during deployment?
+95. Explain in a simpler way.
+96. Can we implement this in my application and practise it?
+97. Use local Kubernetes to practise mounting first, without AWS charges.
+    (Selected setup.)
+98. I will implement it step by step. Give me the steps.
+99. The website rollout completed and my note is still there. What does it mean?
+100. So does this mean it is EBS?
+101. Add all the prompts we used so far to prompt.txt, and update the README
+     with everything we have learned so far.
+102. So did we create EFS?
+103. My instructor asked how to create StorageClasses for EBS and EFS and
+     use their PVCs in a Deployment, StatefulSet, and so on. What does it mean?
+104. Have we completed what my instructor asked us to do?
+105. Which parts of that assignment can we practise without AWS?
+106. First briefly explain what we did. Update the prompt history and README
+     with what we learned, then push the changes to GitHub.
+
+PRACTICE RESULTS FROM THIS SESSION
+
+- Listed the pods in the krishna namespace: the website was Running and Ready.
+- Listed PVCs: postgres-data and website-files were both Bound, with 1Gi
+  capacity and RWO access mode.
+- Running only "kubectl --context kind-learning -n krishna exec" failed
+  because the command did not specify a pod or deployment and a command.
+  Fixed it by running the entire line with "deployment/website -- ls -l /data".
+- Listed /data and read /data/note.txt using kubectl exec and cat.
+- Explained the terminal's trailing % marker: the original test note had
+  no trailing newline; % was not part of the file contents.
+- Replaced the note using sh -c and echo with output redirection.
+- Restarted the website Deployment, waited for the rollout, and read the
+  same note from the replacement pod.
+- Learned that the pod was replaced but the mounted persistent storage stayed.
+- Clarified that this is local kind storage, not actual AWS EBS or EFS.
+- Explained StorageClass as a storage recipe, a CSI driver as the connector
+  to a storage provider, a PVC as a request, and a PV as the supplied storage.
+- Explained dynamic provisioning: a PVC selects a StorageClass; the
+  provisioner supplies storage and a PV is bound to the claim.
+- Discussed EBS volume provisioning and EFS access points in an existing
+  filesystem. This was conceptual explanation, not an AWS deployment.
+- Explained that a Deployment references an existing PVC; a StatefulSet
+  can use volumeClaimTemplates to give each pod its own PVC. StatefulSets
+  can also reference existing shared claims.
+- Compared the instructor's full assignment with our completed local work.
+  Custom StorageClass creation and StatefulSet practice are still pending;
+  EBS/EFS storage and CSI drivers have not been configured.
+- Identified what can be practised without AWS: local StorageClasses,
+  PVC/PV provisioning, Deployment mounts, persistence, and StatefulSet
+  per-pod claims. Local NFS sharing is optional and is not actual EFS.
+- Two-pod sharing was checked during setup; the user has completed the
+  single-pod replacement exercise. The two-pod exercise is available in
+  practice/storage/README.md for the next manual practice.
+
 REUSABLE REVISION PROMPTS (SUGGESTED, NOT ADDITIONAL CHAT HISTORY)
 
 - Read my actual manifests and explain apiVersion, kind, metadata, spec,
@@ -191,6 +246,18 @@ REUSABLE REVISION PROMPTS (SUGGESTED, NOT ADDITIONAL CHAT HISTORY)
 - Diagnose a port-forward conflict without stopping an unrelated process.
 - Review the checked-in YAML for missing connections and dependencies.
   Distinguish declared configuration from verified live cluster behavior.
+- Explain the difference between a PVC, the storage behind it, and the
+  container folder where it is mounted. Use website-files and /data.
+- Walk me through writing /data/note.txt, replacing the website pod, and
+  checking that the note survives. Give one step at a time; I run commands.
+- Explain EBS as an attached disk and EFS as a shared network filesystem.
+  Why does a persistent file in local kind not prove that we are using EBS?
+- Show how two pods on the same kind node can read one RWO volume, and
+  explain why that does not demonstrate EFS-style sharing across nodes.
+- Explain the instructor's StorageClass assignment, then guide me through
+  a local custom StorageClass, PVC and Deployment one step at a time.
+- Teach volumeClaimTemplates with a local StatefulSet and show that each
+  pod gets its own PVC and reuses it after pod replacement.
 
 COMMAND AND QUERY NOTES
 

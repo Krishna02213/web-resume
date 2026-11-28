@@ -1,6 +1,8 @@
 import os
 import secrets
 import time
+import tempfile
+from pathlib import Path
 
 import psycopg
 from flask import Flask, abort, redirect, render_template_string, request, session
@@ -47,6 +49,7 @@ label{display:block;font-weight:600;margin:14px 0 6px}input,textarea{font:inheri
 <small>LOCAL KUBERNETES LAB</small><h1>Your first database app.</h1>
 <p>Add a message and refresh the page. Your message is stored in PostgreSQL, outside the website pod.</p>
 <p class="flow">Browser → website Service → Flask pod → postgres Service → PostgreSQL</p>
+<p><a href="/storage">Practise saving a file to a mounted volume →</a></p>
 <form class="card" method="post" action="/messages">
 <input type="hidden" name="token" value="{{ token }}">
 <label for="name">Your name</label><input id="name" name="name" maxlength="80" required>
@@ -65,6 +68,73 @@ def check_token():
     token = session.get("token")
     if not token or not secrets.compare_digest(token, request.form.get("token", "")):
         abort(400, "Refresh the page and try again.")
+
+
+STORAGE_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mounted storage practice</title>
+<style>
+body{margin:0;background:#f5f6f1;color:#243c30;font:16px system-ui;line-height:1.6}
+main{max-width:760px;margin:40px auto;padding:24px}.card{background:white;border:1px solid #dce4da;border-radius:16px;padding:24px;margin:20px 0}
+textarea{box-sizing:border-box;width:100%;font:inherit;padding:12px;border:1px solid #bacaba;border-radius:8px}
+button{font:inherit;background:#28573e;color:white;border:0;border-radius:8px;padding:12px;margin-top:12px;cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}a{color:#28573e}
+</style></head><body><main>
+<a href="/">← Database practice</a><h1>Your file lives outside the pod.</h1>
+<p>Save a note below. Kubernetes mounts persistent storage at <code>{{ directory }}</code>.
+The app saves your note there as <code>note.txt</code>, separately from PostgreSQL.</p>
+<div class="card"><strong>Pod answering this request</strong><br><code>{{ pod }}</code></div>
+<form class="card" method="post" action="/storage">
+<input type="hidden" name="token" value="{{ token }}">
+<label for="note">Your practice note (up to 2,000 characters)</label>
+<textarea id="note" name="note" rows="5" maxlength="2000" required>{{ note }}</textarea>
+<button>Save to mounted folder</button></form>
+<div class="card"><h2>File currently on the volume</h2>
+{% if exists %}<pre>{{ note }}</pre>{% else %}<p>No file yet. Save your first note above.</p>{% endif %}</div>
+<h2>Try this</h2><ol><li>Save a note.</li><li>Replace the website pod using the practice guide.</li>
+<li>Reopen this page. The pod name changes; your note stays.</li></ol>
+<p>This local kind volume survives pod replacement. Deleting the cluster removes it.
+Two pods on this one node can share it; this is local storage, not AWS EBS or EFS.
+If both save a note, the last completed save wins.</p>
+</main></body></html>"""
+
+
+@app.route("/storage", methods=["GET", "POST"])
+def storage():
+    directory = Path(os.environ.get("STORAGE_DIR", "/data"))
+    # Fail visibly rather than silently writing into the container's own disk.
+    if not directory.is_dir():
+        abort(503, "Storage folder is missing. Mount the website-files volume first.")
+    path = directory / "note.txt"
+    if request.method == "POST":
+        check_token()
+        note = request.form.get("note", "").strip()
+        if not 1 <= len(note) <= 2000:
+            abort(400, "Enter a note with 1–2,000 characters.")
+        # Replace atomically so another pod cannot read a partially written note.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory, delete=False) as file:
+                temporary = file.name
+                file.write(note)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.unlink(temporary)
+        return redirect("/storage", code=303)
+    session.setdefault("token", secrets.token_hex(24))
+    try:
+        note = path.read_text(encoding="utf-8")
+        exists = True
+    except FileNotFoundError:
+        note, exists = "", False
+    return render_template_string(
+        STORAGE_PAGE, note=note, exists=exists, directory=str(directory),
+        pod=os.environ.get("HOSTNAME", "unknown"), token=session["token"],
+    )
 
 
 @app.get("/")

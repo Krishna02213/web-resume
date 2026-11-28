@@ -10,6 +10,7 @@ queries, workload controllers, probes, and volume mounting.
 - [Deployment, StatefulSet and DaemonSet](#deployment-statefulset-and-daemonset)
 - [Readiness, liveness and startup probes](#readiness-liveness-and-startup-probes)
 - [Volume mounting](#volume-mounting)
+- [Persistent file practice and EBS/EFS](#persistent-file-practice-and-ebsefs)
 - [Monitoring architecture and all 13 files](#monitoring-architecture)
 - [Local access and troubleshooting](#open-local-monitoring)
 - [Grafana Cloud queries](#queries-for-grafana-cloud)
@@ -35,11 +36,12 @@ You can add messages, see them after refreshing the page, and delete them.
 - `manifests/database-secret.yaml`: stores the password and session key locally; excluded from Git.
 - `manifests/database-secret.yaml.example`: safe template for a fresh checkout.
 - `manifests/postgres-pvc.yaml`: requests persistent storage for PostgreSQL.
+- `manifests/website-files-pvc.yaml`: requests separate persistent storage for website files.
 - `manifests/postgres-deployment.yaml`: runs one PostgreSQL pod.
 - `manifests/postgres-service.yaml`: gives PostgreSQL an internal address.
 - `manifests/website-deployment.yaml`: runs the Flask website pod.
 - `manifests/website-service.yaml`: gives the website an internal address.
-- `web/app.py`: the page and Python backend, which runs SQL queries.
+- `web/app.py`: the Flask pages and backend; messages use SQL, while `/storage` saves a file on the mounted volume.
 - `web/Dockerfile`: packages the app with Python and its dependencies.
 - `web/requirements.txt`: Python packages installed inside the image.
 - `deploy.sh`: builds the image, loads it into kind, applies the Secret YAML, and deploys the app.
@@ -230,6 +232,11 @@ See the [Kubernetes probe documentation](https://kubernetes.io/docs/concepts/wor
 
 ## Volume mounting
 
+For a hands-on file exercise in the running website, follow
+[Mounted storage practice](practice/storage/README.md). The `/storage` page saves
+a note at `/data/note.txt` on the separate `website-files` PVC. It includes pod
+replacement and two-pod sharing exercises for this single-node kind cluster.
+
 A volume mount makes storage or configuration available at a folder inside a container.
 
 - `volumes`: defines where the data comes from, at Pod level.
@@ -282,6 +289,198 @@ Changing a ConfigMap or Secret does not refresh environment variables in an
 already running container; recreate/restart it to pick up those values.
 Mounted file updates and application reload behavior depend on how the app reads them.
 See the [Kubernetes volume documentation](https://kubernetes.io/docs/concepts/storage/volumes/).
+
+## Persistent file practice and EBS/EFS
+
+### What we learned
+
+**Mounting** makes storage accessible at a folder inside a container. Our
+website sees its file storage at `/data`.
+
+```text
+Website pod → /data/note.txt → website-files PVC → local kind node storage
+```
+
+The app has two separate storage uses:
+
+| PVC | Used by | What it stores |
+| --- | --- | --- |
+| `postgres-data` | PostgreSQL | Database data, including the messages saved through the home page. |
+| `website-files` | Website | `/data/note.txt`, written through the terminal or `/storage` page. |
+
+A **PV** represents storage. A **PVC** requests that storage. A **mount path**
+is the folder where the container accesses it. A PVC is not itself EBS or EFS;
+the storage provider determines what sits behind it.
+
+In our practice output, both PVCs were `Bound`: Kubernetes had connected each
+claim to a volume. Both showed `1Gi` requested/bound capacity and `RWO`
+(`ReadWriteOnce`). RWO means read/write from one node; multiple pods on that
+same node can use the volume. It does not mean only one pod can access it.
+The `standard` StorageClass here provisions local storage, not an AWS disk.
+
+### Commands we ran
+
+Run each complete command on its own line, in the Mac terminal.
+
+1. Check the app and its storage:
+
+   ```bash
+   kubectl --context kind-learning -n krishna get pods
+   kubectl --context kind-learning -n krishna get pvc
+   ```
+
+2. List the mounted folder and read the file:
+
+   ```bash
+   kubectl --context kind-learning -n krishna exec deployment/website -- ls -l /data
+   kubectl --context kind-learning -n krishna exec deployment/website -- cat /data/note.txt
+   ```
+
+3. Replace the practice note and read it back. `>` overwrites this file:
+
+   ```bash
+   kubectl --context kind-learning -n krishna exec deployment/website -- sh -c 'echo "Ayush saved this file on persistent storage" > /data/note.txt'
+   kubectl --context kind-learning -n krishna exec deployment/website -- cat /data/note.txt
+   ```
+
+4. Replace the website pod and wait until its replacement is ready:
+
+   ```bash
+   kubectl --context kind-learning -n krishna rollout restart deployment/website
+   kubectl --context kind-learning -n krishna rollout status deployment/website --timeout=120s
+   ```
+
+5. Read the file from the replacement pod:
+
+   ```bash
+   kubectl --context kind-learning -n krishna exec deployment/website -- cat /data/note.txt
+   ```
+
+We observed the same contents before and after the rollout:
+
+```text
+Ayush saved this file on persistent storage
+```
+
+**The pod was replaced; the storage stayed.** The new pod mounted the same
+volume at `/data` and could read the saved file. This demonstrates persistence
+across pod replacement. It is not a backup or proof of survival after cluster
+deletion.
+
+### Command details and messages we encountered
+
+| Part or output | Simple meaning |
+| --- | --- |
+| `--context kind-learning` | Selects our local learning cluster. |
+| `-n krishna` | Selects the application's namespace. |
+| `exec deployment/website -- COMMAND` | Runs a command inside a pod selected from the website Deployment. |
+| `--` | Separates kubectl options from the command run inside the container. |
+| `ls -l /data` | Lists the mounted folder's files and their details. |
+| `cat /data/note.txt` | Prints the note's contents. |
+| `sh -c 'echo ... > /data/note.txt'` | Runs the shell and redirects text into the file inside the container. Quotes keep the redirection inside the container. |
+| `pod, type/name or --filename must be specified` | `kubectl exec` was incomplete; include `deployment/website` and the command after `--`. |
+| `%` displayed after the original test note | zsh's marker for output without a trailing newline; not part of the note. |
+| `old replicas are pending termination` | Kubernetes is waiting for old pods to finish stopping during the rollout. |
+| `successfully rolled out` | The Deployment finished replacing its pods and the new replicas became available. |
+
+### Is this EBS?
+
+**No. Our exercise uses local disk storage in the kind node.** Persistence is
+a behavior that multiple storage systems can provide.
+
+| Storage | Simple meaning | Mounting concept |
+| --- | --- | --- |
+| Local kind storage, used here | Disk space in the local Kubernetes node. | Kubernetes mounts the local volume into the pod at `/data`. |
+| AWS EBS: Elastic Block Store | A virtual disk, normally attached to one EC2 instance at a time. | Attach the disk, prepare a filesystem if empty, then mount it. With Kubernetes, the EBS CSI driver manages this. |
+| AWS EFS: Elastic File System | A shared filesystem accessed over the network. | Clients mount the existing filesystem over NFS; no disk formatting. With Kubernetes, the EFS CSI driver manages the mounts. |
+
+EBS has specialized Multi-Attach support, which requires suitable coordination;
+it is not an ordinary shared-folder setup. EFS is designed for shared file
+access from multiple servers. A PVC must use the appropriate storage driver
+and configuration to get actual EBS or EFS storage. Changing an access-mode
+label alone does not change the storage provider.
+
+The manual exercise completed so far is saving a file and checking it after
+pod replacement. The setup also verified that two website pods on this single
+node could read the same file, then returned the website to one replica.
+For your next manual exercise, follow the
+[two-pod sharing steps](practice/storage/README.md#3-read-the-same-file-from-two-pods).
+Same-node sharing does not demonstrate EFS or sharing across multiple nodes.
+
+Deleting the kind cluster removes this lab's local storage. Deleting a PVC
+may delete its underlying data, depending on its reclaim policy. Restart
+port-forward if the pod it was connected to is replaced.
+
+### StorageClass, CSI driver, PVC and PV
+
+Your instructor's assignment covers how the storage is supplied as well as
+how the application mounts it.
+
+| Piece | Simple meaning |
+| --- | --- |
+| StorageClass | A recipe describing which provisioner to use and its storage settings. |
+| Provisioner / CSI driver | The component that supplies storage; AWS CSI drivers connect Kubernetes to EBS or EFS. Not every local provisioner uses CSI. |
+| PVC | The application's request for storage, selecting a class through `storageClassName` or using the default class. |
+| PV | Kubernetes' representation of the supplied storage, bound to the claim. |
+| Volume mount | The folder where a container accesses that storage, such as `/data`. |
+
+With dynamic provisioning, the request and access flow is:
+
+```text
+PVC selects StorageClass → provisioner supplies storage → PV binds to PVC
+Pod references PVC → container accesses the mounted folder
+```
+
+Some classes wait until a pod needs the claim before provisioning storage.
+Creating a StorageClass alone does not create a disk. For EBS, the driver can
+create an EBS volume for a claim. For EFS dynamic provisioning, the filesystem
+and network access are prepared first; the driver creates access points in
+that existing filesystem for claims. These AWS drivers need AWS permissions.
+We discussed this flow but have not configured it on AWS.
+
+### Deployment versus StatefulSet storage
+
+Our website Deployment references the existing `website-files` claim in its
+pod template. All replicas use that reference; a Deployment does not
+automatically create a different PVC for each replica.
+
+A StatefulSet can use `volumeClaimTemplates` to create a separate PVC for
+each pod, for example:
+
+```text
+database-0 → data-database-0 PVC → its own volume
+database-1 → data-database-1 PVC → its own volume
+```
+
+A replacement pod normally reuses its corresponding claim. This does not
+automatically replicate or synchronize database data. StatefulSets can also
+reference existing claims; separate per-pod claims come from the templates.
+We explained this concept; we have not implemented a StatefulSet exercise.
+
+### Assignment progress and what we can do without AWS
+
+| Exercise | Progress | Possible locally without AWS? |
+| --- | --- | --- |
+| Use the existing StorageClass to provision a PVC/PV | Completed with the local `standard` class. | Yes. |
+| Mount a PVC in a Deployment | Completed at `/data`. | Yes. |
+| Save a file and verify persistence after pod replacement | Completed manually. | Yes. |
+| Read one volume from two same-node pods | Verified during setup; available for manual practice. | Yes. |
+| Inspect StorageClass settings and create a custom local class | Still to practise. | Yes, with a compatible local provisioner. |
+| Use StatefulSet `volumeClaimTemplates` for per-pod storage | Explained; still to practise. | Yes. |
+| Share files across nodes through NFS | Optional; not implemented. | Yes, with extra local setup; this is not EFS. |
+| Configure EBS and EFS StorageClasses and their CSI drivers | Explained; not implemented. | Actual EBS/EFS integration requires AWS resources and access. |
+| Use PVCs backed by actual EBS or EFS | Not implemented. | Requires AWS storage; storage and related resources incur charges. |
+
+We have completed the local Deployment/PVC and persistence part of the
+assignment, not the full EBS/EFS and StatefulSet assignment. Our next local
+exercise is inspecting the existing StorageClass, creating a custom local
+class, and using it with a PVC and StatefulSet. These are planned exercises,
+not completed work.
+
+References: [StorageClasses](https://kubernetes.io/docs/concepts/storage/storage-classes/),
+[StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/),
+[AWS EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html),
+and [AWS EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html).
 
 ## Monitoring architecture
 

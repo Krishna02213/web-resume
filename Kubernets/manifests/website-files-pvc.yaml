@@ -1,0 +1,12 @@
+# Local kind storage: survives pod replacement, not cluster deletion.
+# RWO allows multiple pods on the SAME node; this is not an EFS/RWX lab.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: website-files
+  namespace: krishna
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
